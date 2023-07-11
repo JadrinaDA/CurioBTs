@@ -1,0 +1,164 @@
+#!/usr/bin/env python
+#
+# License: BSD
+#   https://raw.githubusercontent.com/stonier/py_trees_ros/devel/LICENSE
+#
+##############################################################################
+# Documentation
+##############################################################################
+"""
+Launch a qt dashboard for the tutorials.
+"""
+##############################################################################
+# Imports
+##############################################################################
+
+import py_trees_ros
+import rospy
+import signal
+import sys
+
+import functools
+import std_msgs.msg as std_msgs
+import threading
+
+from python_qt_binding.QtCore import Signal, Qt, QTimer, Slot
+from python_qt_binding.QtWidgets import QWidget, QPushButton, QGridLayout, QSizePolicy, QLabel, QLineEdit
+
+from python_qt_binding.QtWidgets import QApplication, QMainWindow
+
+class Dashboard(QWidget):
+
+    _scan_button_led = Signal(bool)
+
+    def __init__(self):
+        super(Dashboard, self).__init__()
+
+        not_latched = False
+        # latched = True
+        self.publishers = py_trees_ros.utilities.Publishers(
+            [
+                ('gohome', "~gohome", std_msgs.Empty, not_latched, 1),
+                ('command', "~command", std_msgs.String, not_latched, 1),
+                ('pause', "~pause", std_msgs.Empty, not_latched, 1)
+            ]
+        )
+
+        self.scan_push_button = QPushButton("Go Home")
+        self.scan_push_button.setStyleSheet("QPushButton { font-size: 30pt; }")
+        self.scan_push_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.scan_push_button.pressed.connect(functools.partial(self.publish_button_message, self.publishers.gohome))
+
+        self.pause_button = QPushButton("Pause")
+        self.pause_button.setStyleSheet("QPushButton { font-size: 30pt; }")
+        self.pause_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.pause_button.pressed.connect(functools.partial(self.publish_button_message, self.publishers.pause))
+
+
+        self.led_strip_flashing = False
+        self.led_strip_on_count = 1
+        self.led_strip_colour = "grey"
+
+        self.led_strip_timer = QTimer()
+        self.led_strip_timer.timeout.connect(self.led_strip_timer_callback)
+
+        self.led_strip_lock = threading.Lock()
+        self.led_strip_label = QLabel("LED Strip")
+        self.led_strip_label.setAlignment(Qt.AlignCenter)
+        self.led_strip_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.led_strip_label.setStyleSheet("background-color: %s; font-size: 30pt;" % self.led_strip_colour)
+
+        self.color_box = QLabel("")
+        self.color_box.setAlignment(Qt.AlignCenter)
+        self.color_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.color_box.setStyleSheet("background-color: %s; font-size: 30pt;" % self.led_strip_colour)
+
+        self.textbox = QLineEdit(self)
+        self.textbox.setAlignment(Qt.AlignCenter)
+        self.textbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        self.tb_button = QPushButton("Enter")
+        self.tb_button.setStyleSheet("QPushButton { font-size: 30pt; }")
+        self.tb_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.tb_button.pressed.connect(functools.partial(self.publish_tb_message, self.publishers.command))
+        
+        self.hbox_layout = QGridLayout(self)
+        self.hbox_layout.addWidget(self.scan_push_button)
+        self.hbox_layout.addWidget(self.led_strip_label)
+        self.hbox_layout.addWidget(self.color_box)
+        self.hbox_layout.addWidget(self.textbox, 3, 0)
+        self.hbox_layout.addWidget(self.tb_button, 3, 1)
+        self.hbox_layout.addWidget(self.pause_button)
+        self.next_wp = [0, 0]
+        self.colors = ["blue", "purple", "red", "pink", "yellow"]
+        self.colind = 0
+        self.paused = False
+
+        self.subscribers = py_trees_ros.utilities.Subscribers(
+            [
+                ("status", "/status", std_msgs.String, self.led_strip_display_callback)
+            ]
+        )
+
+        #self.led_strip_timer.start(60000)  # ms
+
+    def publish_button_message(self, publisher):
+        publisher.publish()
+        if publisher == self.publishers.gohome:
+            self.scan_push_button.setStyleSheet("QPushButton { font-size: 30pt; background-color: green}")
+        else:
+            if self.paused:
+                self.pause_button.setStyleSheet("QPushButton { font-size: 30pt; background-color: grey}")
+                self.led_strip_label.setText("Resume")
+                self.paused = False
+            else:
+                self.pause_button.setStyleSheet("QPushButton { font-size: 30pt; background-color: red}")
+                self.led_strip_label.setText("Paused")
+                self.paused = True
+
+    def publish_tb_message(self, publisher):
+        text = self.textbox.text()
+        if (text.isnumeric()):
+            publisher.publish(std_msgs.String(text))
+        self.textbox.setText("")
+
+    def led_strip_display_callback(self, msg):
+        with self.led_strip_lock:
+            if not msg.data:
+                self.led_strip_colour = "grey"
+                self.led_strip_flashing = False
+                self.led_strip_label.text = "Oh my"
+            else:
+                tuple_str = msg.data.split(" ")[2]
+                waypoint = tuple_str[1:len(tuple_str)-1].split(",")
+                if waypoint != self.next_wp:
+                    self.next_wp = waypoint
+                    self.color_box.setStyleSheet("background-color: %s; font-size: 30pt;" % self.colors[self.colind])
+                    self.colind += 1
+                    if self.colind == 5:
+                        self.colind = 0
+                if ("1" in msg.data):
+                    self.scan_push_button.setStyleSheet("QPushButton { font-size: 30pt; background-color: grey}")
+                self.led_strip_label.setText(msg.data)
+                self.led_strip_colour = "red"
+                #self.led_strip_label.setStyleSheet("background-color: %s; font-size: 30pt;" % self.led_strip_colour)
+ 
+    @Slot()
+    def led_strip_timer_callback(self):
+        self.publishers.gohome.publish(std_msgs.Empty())
+        self.scan_push_button.setStyleSheet("QPushButton { font-size: 30pt; background-color: red}")
+
+
+##############################################################################
+# Main
+##############################################################################
+
+if __name__ == '__main__':
+    rospy.init_node('dashboard')
+    app = QApplication(sys.argv)
+    window = QMainWindow()
+    dashboard = Dashboard()
+    window.setCentralWidget(dashboard)
+    window.show()
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    sys.exit(app.exec_())
