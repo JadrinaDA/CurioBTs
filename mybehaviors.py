@@ -1,3 +1,13 @@
+##############################################################################
+# Documentation
+##############################################################################
+"""
+Custom behaviors used in order to control the curio robot.
+"""
+##############################################################################
+# Imports
+##############################################################################
+
 import py_trees
 import random
 import actionlib
@@ -8,6 +18,10 @@ from geometry_msgs.msg import Pose, Point, Quaternion
 from tf.transformations import quaternion_from_euler
 import math
 import std_msgs.msg as std_msgs
+
+##############################################################################
+# Behaviours
+##############################################################################
 
 class ChangePath(py_trees.behaviour.Behaviour):
     """
@@ -31,6 +45,12 @@ class ChangePath(py_trees.behaviour.Behaviour):
     def update(self):
         if self.blackboard.command != "None":
             self.curr_path = int(self.blackboard.command)
+            # if len(str(self.blackboard.command)) == 1 :
+            #     self.curr_path = int(self.blackboard.command)
+            # else:
+            #     self.publisher.publish(self.blackboard.command)
+            #     self.blackboard.command = "None"
+            #     return py_trees.common.Status.SUCCESS
             self.blackboard.command = "None"
         else:
             if self.n_path > self.curr_path + 1:

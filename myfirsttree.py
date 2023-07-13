@@ -1,15 +1,40 @@
 #!/usr/bin/env python
 
+##############################################################################
+# Documentation
+##############################################################################
+"""
+Basic py_tree_ros example that just has robot between two points and can be told
+to go home.
+"""
+##############################################################################
+# Imports
+##############################################################################
+
 import functools
 import py_trees
 import py_trees_ros
 import py_trees.console as console
 import rospy
 import sys
-from mybehaviors import MoveClient
+from extrabehaviors import MoveClient
 from std_msgs.msg import Bool
 
+##############################################################################
+# Behaviours
+##############################################################################
+
+
 def create_root():
+    """
+    Creates the different behaviors and composites and joins them together 
+    in tree structure.
+
+    root --> sequence --> gohome2bb, behaviorbb
+         --> fallback --> go home  --> gohome?, moverobothome
+                      --> sequence --> moverobot1, moverobot2  
+    """
+
     root = py_trees.composites.Parallel("Root")
     sequence = py_trees.composites.Sequence("Sequence")
     sequence2 = py_trees.composites.Sequence("Sequence")
@@ -19,18 +44,21 @@ def create_root():
     moveclient2 = MoveClient(name="MoveRobot 2")
     moveclienth = MoveClient(name="MoveRobot Home")
 
+    # Gets message about what robot is doing to bb
     behavior2bb = py_trees_ros.subscribers.EventToBlackboard(
         name="Behavior2BB",
         topic_name="/dashboard/behavior",
         variable_name="curr_behavior"
     )
 
+    # Gets message to gohome to bb, if true robot must go home
     gohome2bb = py_trees_ros.subscribers.EventToBlackboard(
         name="GoHome2BB",
         topic_name="/dashboard/gohome",
         variable_name="gohome"
     )
 
+    # If variable gohome is true robot is sent home
     is_gohome_requested = py_trees.blackboard.CheckBlackboardVariable(
         name="GoHome?",
         variable_name='gohome',
@@ -48,7 +76,14 @@ def create_root():
 def shutdown(behavior_tree):
     behavior_tree.interrupt()
 
+##############################################################################
+# Main
+##############################################################################
+
 def main():
+    """
+    Entry point for the script Creates ros node and tree before executing it.
+    """
     rospy.init_node("tree")
     root = create_root()
     behavior_tree = py_trees_ros.trees.BehaviourTree(root)

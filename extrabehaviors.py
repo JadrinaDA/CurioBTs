@@ -1,3 +1,13 @@
+##############################################################################
+# Documentation
+##############################################################################
+"""
+Behaviors (custom or modified) that were used to play around with py_trees, only relevant one is MoveClient.
+"""
+##############################################################################
+# Imports
+##############################################################################
+
 import py_trees
 import random
 import actionlib
@@ -9,9 +19,21 @@ from tf.transformations import quaternion_from_euler
 import math
 import std_msgs.msg as std_msgs
 
+##############################################################################
+# Behaviours
+##############################################################################
+
 class Hello(py_trees.behaviour.Behaviour):
     """
-    Behavior just prints hello world to console.
+    Behavior just prints a message, by default "hello world", to console at every tick.
+    Always succeeds.
+
+    Args:
+        name (:obj:`str`): name of the behaviour
+
+    Attributes:
+        message (:obj:`str`): the message to be printed
+    
     """
     def __init__(self, name):
         super(Hello, self).__init__(name=name)
@@ -97,7 +119,7 @@ class Count(py_trees.behaviour.Behaviour):
 
 class Random(py_trees.behaviour.Behaviour):
     """
-    Behavior generate a number and returns success if it is even.
+    Behavior generates a number and returns success if it is even.
     """
     def __init__(self, name):
         super(Random, self).__init__(name=name)
@@ -136,9 +158,28 @@ class Adder(py_trees.behaviour.Behaviour):
         return py_trees.common.Status.SUCCESS
     
 class MoveClient(py_trees.behaviour.Behaviour):
+    """
+    Behavior that includes an action client to send goals to robot.
+    Takes a point from its list of goals and sends that point when ticked.
+    At every tick after it shall return running until it reaches the
+    goal (Sucess) or the goal is aborted (Failure). Goal can be 
+    preempted which will set behavior to invalid. 
+
+    Args:
+        name (:obj:`str`): name of the behaviour, must be in format MoveRobot # where # 
+        is the index of the goal (home is the exception)
+
+    Attributes:
+        num (:obj:`int`): index of selected goal
+        pose_seq (:obj:`Pose`): list of poses representing goals
+        goal_s (:obj:`str`): string version of goal as (x, y)
+        client (:obj:`SimpleActionClient`) : simple action client that will send goals to movebase
+    
+    """
 
     def __init__(self, name):
         super(MoveClient, self).__init__(name=name)
+        # Get goal index
         if (name.split(" ")[1] == "Home"):
             self.num = 3
         else:
@@ -150,8 +191,6 @@ class MoveClient(py_trees.behaviour.Behaviour):
         yaweulerangles_seq = [90,0,180,0]
         quat_seq = list()
         self.pose_seq = list()
-        self.goal_cnt = 0
-        self.dist = [0,10,10]
         for yawangle in yaweulerangles_seq:
             quat_seq.append(Quaternion(*(quaternion_from_euler(0, 0, yawangle*math.pi/180, axes='sxyz'))))
         n = 3
@@ -159,6 +198,8 @@ class MoveClient(py_trees.behaviour.Behaviour):
         for point in points:
             self.pose_seq.append(Pose(Point(*point),quat_seq[n-3]))
             n += 1
+        
+        # Initialize the MoveBase Action Client
         self.client = actionlib.SimpleActionClient('move_base',MoveBaseAction)
         rospy.loginfo("Waiting for move_base action server...")
         wait = self.client.wait_for_server(rospy.Duration(5.0))
@@ -170,34 +211,43 @@ class MoveClient(py_trees.behaviour.Behaviour):
         rospy.loginfo("Starting goals achievements ...")
 
     def setup(self, timeout):
+        # Create the goal based on the pose
         goal = MoveBaseGoal()
         goal.target_pose.header.frame_id = "map"
         goal.target_pose.header.stamp = rospy.Time.now()
         goal.target_pose.pose = self.pose_seq[self.num]
         self.goal = goal
+        # Always begin with not having sent the goal
         self.goal_sent = False
+        # Set up publisher to send robot status
         self.publisher = rospy.Publisher("/status", std_msgs.String, queue_size=10, latch=True)
         return True
     
     def initialise(self):
+        # When ticked for the first time since S or F, goal hasnt been sent
         self.goal_sent = False
     
     def update(self):
+        # Only send goal if it has not been sent yet
         if (not self.goal_sent):
             self.client.send_goal(self.goal)
             self.goal_sent = True
         state = self.client.get_state()
         if state == GoalStatus.SUCCEEDED:
+            # Send message of arrival and return SUCCESS
             self.publisher.publish(std_msgs.String("Arrived at " + str(self.goal_s)))
             return py_trees.common.Status.SUCCESS
         elif state == GoalStatus.ACTIVE or state == GoalStatus.PENDING:
+            # Send message of moving and return RUNNING
             self.publisher.publish(std_msgs.String("Moving to " + str(self.goal_s)))
             return py_trees.common.Status.RUNNING
         else:
+            # Anything goes wrong return FAILURE
             print(state)
             return py_trees.common.Status.FAILURE
         
     def terminate(self, new_status):
+        # If interrupted send message to inform user
         state = self.client.get_state()
         if state == GoalStatus.ACTIVE:
             self.publisher.publish(std_msgs.String("Goal was preempted"))
