@@ -26,20 +26,40 @@ import std_msgs.msg as std_msgs
 class ChangePath(py_trees.behaviour.Behaviour):
     """
     Behavior causes the robot to change the path taken.
+    Returns SUCCESS if we find  a good path, FAILURE if
+    we cycle through all paths and none work.
+
+    Args:
+        name (:obj:`str`): name of the behaviour
+
+    Attributes:
+        blackboard (:obj:`Blackboard`): Blackboard for behavior tree communication
+        n_path (:obj:`int`): number of paths
+        curr_path (:obj:`int`): id of the current path
+        client (:obj:`Publisher`) : ROS publisher that alerts movebase client
+    
     """
     def __init__(self, name):
         super(ChangePath, self).__init__(name=name)
+        # Initialize blackboard with its variables
         self.blackboard = py_trees.blackboard.Blackboard()
+        # Command to use a certain path
         self.blackboard.command = "None"
+        # Current path feedback
         self.blackboard.curr_path = 1
 
     def setup(self, timeout):
+        # Set up publisher to let movebase client know when to switch paths
         self.publisher = rospy.Publisher("move_base/switch_path", std_msgs.String, queue_size=10, latch=True)
+        # Path 0 is always home so start at 1
         self.curr_path =1
+        # Currently we have 3 paths
         self.n_path = 3
         return True
     
     def initialise(self):
+        # Whenever ticked we want it to check all paths
+        # Therefore start with 1
         self.curr_path = 1
 
     def update(self):
