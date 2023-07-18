@@ -137,7 +137,7 @@ class Dashboard(QWidget):
                     self.colind += 1
                     if self.colind == 5:
                         self.colind = 0
-                if ("1" in msg.data):
+                if ("(0,0)" not in msg.data):
                     self.scan_push_button.setStyleSheet("QPushButton { font-size: 30pt; background-color: grey}")
                 self.led_strip_label.setText(msg.data)
                 self.led_strip_colour = "red"
