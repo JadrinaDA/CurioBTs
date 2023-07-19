@@ -5,7 +5,7 @@ import math
 import actionlib
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from actionlib_msgs.msg import GoalStatus
-from geometry_msgs.msg import Pose, Point, Quaternion
+from geometry_msgs.msg import Pose, Point, Quaternion, PointStamped
 from tf.transformations import quaternion_from_euler
 from std_msgs.msg import String
 
@@ -20,6 +20,7 @@ class MoveBaseSeq():
         self.paths = {}
         self.goal_cnt = 0
         self.curr_path = 1
+        self.b_path = []
         quat_seqs = []
         for yawangle_seq in yaweulerangles_seqs:
             quat_seq = list()
@@ -37,6 +38,7 @@ class MoveBaseSeq():
             self.paths[ind] = pose_seq
             ind += 1
         self.goal_s = "(" + str(points_seqs[1][self.goal_cnt*3]) + "," + str(points_seqs[0][self.goal_cnt*3+ 1]) +")"
+        self.ind = ind
         self.client = actionlib.SimpleActionClient('move_base',MoveBaseAction)
         self.publisher = rospy.Publisher("/status", String, queue_size=10, latch=True)
         self.state_pub = rospy.Publisher("/state", String, queue_size=10, latch=True)
@@ -65,6 +67,7 @@ class MoveBaseSeq():
         self.pose_seq = self.paths[self.curr_path]
         if status == 2:
             rospy.loginfo("Goal pose "+str(self.goal_cnt)+" received a cancel request after it started executing, completed execution!")
+            self.goal_cnt -= 1
 
         if status == 3:
             rospy.loginfo("Goal pose "+str(self.goal_cnt)+" reached")
@@ -99,7 +102,20 @@ class MoveBaseSeq():
 
     def switch_path(self, data):
         self.pose_seq = self.paths[self.curr_path]
-        self.curr_path = int(data.data)
+        if self.curr_path == 0 and int(data.data) != 0:
+            self.goal_cnt = 0
+        if False:
+            waypoint = data.data[1:len(data.data)-1].split(",")
+            waypoint[0] = int(waypoint[0])
+            waypoint[1] = int(waypoint[1])
+            waypoint.append(0)
+            index = 0
+            for path in self.points_paths:
+                if path.contains(waypoint):
+                    index = self.points_paths.index(path)
+            self.curr_path = index
+        else:
+            self.curr_path = int(data.data)
         if self.curr_path == -1:
             self.client.cancel_goal()
             self.curr_path = 1
@@ -113,7 +129,7 @@ class MoveBaseSeq():
                     next_goal.target_pose.header.stamp = rospy.Time.now()
                     next_goal.target_pose.pose = self.pose_seq[self.goal_cnt]
                     rospy.loginfo("Switching to path " + data.data)
-                    self.goal_s = "(" + str(self.points_paths[self.curr_path][self.goal_cnt*3]) + " , " + str(self.points_paths[self.curr_path][self.goal_cnt*3+ 1]) +")"
+                    self.goal_s = "(" + str(self.points_paths[self.curr_path][self.goal_cnt*3]) + "," + str(self.points_paths[self.curr_path][self.goal_cnt*3+ 1]) +")"
                     rospy.loginfo("Sending goal pose "+str(self.goal_cnt+1)+" to Action Server")
                     rospy.loginfo(str(self.pose_seq[self.goal_cnt]))
                     self.publisher.publish(String("Moving to " + str(self.goal_s)))
@@ -123,6 +139,7 @@ class MoveBaseSeq():
     def movebase_client(self):
         # We'll have a subscriber listening for a switch in path
         rospy.Subscriber("move_base/switch_path", String, self.switch_path)
+        rospy.Subscriber("/clicked_point", PointStamped, self.add_point)
         
         goal = MoveBaseGoal()
         goal.target_pose.header.frame_id = "map"
@@ -133,6 +150,19 @@ class MoveBaseSeq():
         rospy.loginfo(str(self.paths[self.curr_path][self.goal_cnt]))
         self.client.send_goal(goal, self.done_cb, self.active_cb, self.feedback_cb)
         rospy.spin()
+
+    def add_point(self, data):
+        point = [data.point.x, data.point.y, 0]
+        quat = Quaternion(*(quaternion_from_euler(0, 0, 0*math.pi/180, axes='sxyz')))
+        if len(self.paths.keys()) < self.ind + 1:
+            self.paths[self.ind] = []
+            self.points_paths.append([])
+        self.paths[self.ind].append(Pose(Point(*point),quat))
+        for p in point:
+            self.points_paths[self.ind].append(p)
+        if len(self.paths[self.ind]) == 3:
+            self.ind += 1
+            rospy.loginfo(self.points_paths)
 
 if __name__ == '__main__':
     try:
