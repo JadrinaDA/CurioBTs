@@ -24,6 +24,7 @@
             command="load" />
         <remap from="cmd_vel" to="/ackermann_drive_controller/cmd_vel"/>
         <param name="base_local_planner" value="dwa_local_planner/DWAPlannerROS" />
+        <rosparam file="$(find curio_navigation)/config/recovery_behaviors.yaml" command="load" />
     </node>
 
 </launch>
