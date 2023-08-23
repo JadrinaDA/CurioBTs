@@ -1,3 +1,0 @@
-recovery_behaviors:
-  - name: 'stepback_and_steerturn_recovery'
-    type: 'stepback_and_steerturn_recovery/StepBackAndSteerTurnRecovery'
