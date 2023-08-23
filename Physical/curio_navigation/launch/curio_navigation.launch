@@ -1,0 +1,58 @@
+<launch>
+  <!-- Arguments -->
+  <arg name="map_file" default="/home/curio/Documents/play_room.yaml"/>
+  <arg name="open_rviz" default="true"/>
+
+  <!-- gazebo   -->
+  <include file="$(find curio_gazebo)/launch/curio_shapes_world.launch">
+    <arg name="paused" value="false" /> 
+    <arg name="use_rqt_robot_steering" value="false"/>
+  </include>
+ 
+
+  <!-- Map server -->
+  <node pkg="map_server" name="map_server" type="map_server" args="$(arg map_file)"/>
+
+  <!-- AMCL -->
+  <include file="$(find curio_navigation)/launch/amcl.launch"/>
+
+  <!-- move_base -->
+  <include file="$(find curio_navigation)/launch/move_base.launch">
+  </include>
+
+  <!-- obstacle detector -->
+  <node name="nodelet_manager" pkg="nodelet" type="nodelet" args="manager" output="screen">
+    <param name="num_worker_threads" value="20"/>
+  </node>
+
+  <node name="obstacle_extractor" pkg="nodelet" type="nodelet" args="load obstacle_detector/ObstacleExtractor nodelet_manager">
+    <remap from="scan" to="sensors/laser" />
+    <param name="active"               value="true"/>
+    <param name="use_scan"             value="true"/>
+    <param name="use_pcl"              value="false"/>
+
+    <param name="use_split_and_merge"    value="true"/>
+    <param name="circles_from_visibles"  value="true"/>
+    <param name="discard_converted_segments" value="true"/>
+    <param name="transform_coordinates"  value="true"/>
+
+    <param name="min_group_points"     value="5"/>
+
+    <param name="max_group_distance"   value="0.8"/>
+    <param name="distance_proportion"  value="0.00628"/>
+    <param name="max_split_distance"   value="0.2"/>
+    <param name="max_merge_separation" value="0.5"/>
+    <param name="max_merge_spread"     value="0.2"/>
+    <param name="max_circle_radius"    value="1"/>
+    <param name="radius_enlargement"   value="0.3"/>
+
+    <param name="frame_id"             value="map"/>
+  </node>
+
+    <!-- rviz -->
+  <group if="$(arg open_rviz)"> 
+    <node pkg="rviz" type="rviz" name="rviz" required="true"
+          args="-d $(find curio_viz)/rviz/curio_map_view.rviz"/>
+  </group>
+  
+</launch>

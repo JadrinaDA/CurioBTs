@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<!--     
+ -->
+<launch>
+    <!-- Launch Move Base -->
+    <remap from="odom" to="odom/filtered"/>
+    <node pkg="move_base" type="move_base" name="move_base"
+        respawn="false" output="screen">
+        <rosparam
+            file="$(find curio_navigation)/config/costmap_common.yaml"
+            command="load"
+            ns="global_costmap" />
+        <rosparam
+            file="$(find curio_navigation)/config/costmap_common.yaml"
+            command="load"
+            ns="local_costmap" />
+        <rosparam
+            file="$(find curio_navigation)/config/costmap_global.yaml"
+            command="load" />
+        <rosparam
+            file="$(find curio_navigation)/config/costmap_local.yaml"
+            command="load" />
+        <rosparam
+            file="$(find curio_navigation)/config/planner_local_teb.yaml"
+            command="load" />
+        <rosparam file="$(find curio_navigation)/config/recovery_behaviors.yaml" command="load" />
+        <remap from="cmd_vel" to="/cmd_vel"/>
+        <param name="base_local_planner" value="teb_local_planner/TebLocalPlannerROS" />
+
+        <!-- LOAD COSTMAP_CONVERTER PARAMETERS HERE 
+        <rosparam file="$(find curio_navigation)/config/costmap_converter_params.yaml" command="load" />
+        -->
+
+        <param name="controller_frequency" value="5.0" />
+    </node>
+
+</launch>

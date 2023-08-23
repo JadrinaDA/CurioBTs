@@ -1,0 +1,25 @@
+controller_frequency: 3.0
+
+TrajectoryPlannerROS:
+  max_vel_x: 0.3
+  min_vel_x: 0.0
+
+  max_vel_theta: 4.0
+  min_in_place_vel_theta: 0.3
+
+  acc_lim_x: 0.8
+  acc_lim_theta: 3.0
+  holonomic_robot: false
+
+  # Tolerance
+  yaw_goal_tolerance: 2
+  xy_goal_tolerance: 0.3
+
+  # Added
+  sim_time: 3.0
+  vtheta_samples: 40
+
+  # Trajectory scoring parameters
+  meter_scoring: true
+
+  #controller_frequency: 5.0

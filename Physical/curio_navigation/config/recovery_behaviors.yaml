@@ -1,0 +1,6 @@
+recovery_behaviors:
+  - name: 'stepback_and_steerturn_recovery'
+    type: 'stepback_and_steerturn_recovery/StepBackAndSteerTurnRecovery'
+
+step_back_and_max_steer_recovery:
+    steering_timeout    : 5.0
