@@ -1,0 +1,216 @@
+#!/usr/bin/env python
+#
+#
+##############################################################################
+# Documentation
+##############################################################################
+"""
+Launch a qt dashboard to control the rover.
+"""
+##############################################################################
+# Imports
+##############################################################################
+
+import py_trees_ros
+import rospy
+import signal
+import sys
+
+import functools
+import std_msgs.msg as std_msgs
+import threading
+
+from python_qt_binding.QtCore import Signal, Qt, QTimer, Slot
+from python_qt_binding.QtWidgets import QWidget, QPushButton, QGridLayout, QSizePolicy, QLabel, QLineEdit
+
+from python_qt_binding.QtWidgets import QApplication, QMainWindow
+
+##############################################################################
+# Class
+##############################################################################
+
+class Dashboard(QWidget):
+
+    def __init__(self):
+        super(Dashboard, self).__init__()
+
+        not_latched = False
+        # latched = True
+        # We set up the publishers of our buttons
+        self.publishers = py_trees_ros.utilities.Publishers(
+            [
+                ('gohome', "~gohome", std_msgs.Empty, not_latched, 1),
+                ('command', "~command", std_msgs.String, not_latched, 1),
+                ('pause', "~pause", std_msgs.Empty, not_latched, 1),
+                ('state', "/state", std_msgs.String, not_latched, 1)
+            ]
+        )
+
+        # We set up our two buttons and their callbacks
+        self.gohome_button = QPushButton("Go Home")
+        self.gohome_button.setStyleSheet("QPushButton { font-size: 30pt; }")
+        self.gohome_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.gohome_button.pressed.connect(functools.partial(self.publish_button_message, self.publishers.gohome))
+
+        self.pause_button = QPushButton("Pause")
+        self.pause_button.setStyleSheet("QPushButton { font-size: 30pt; }")
+        self.pause_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.pause_button.pressed.connect(functools.partial(self.publish_button_message, self.publishers.pause))
+
+
+        self.status_colour = "grey"
+
+        self.status_lock = threading.Lock()
+        self.status_label = QLabel("LED Strip")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.status_label.setStyleSheet("background-color: %s; font-size: 30pt;" % self.status_colour)
+
+        # We create the box that changes color
+        self.color_box = QLabel("")
+        self.color_box.setAlignment(Qt.AlignCenter)
+        self.color_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.color_box.setStyleSheet("background-color: %s; font-size: 30pt;" % self.status_colour)
+
+        # This textbox will show the status
+        self.textbox = QLineEdit(self)
+        self.textbox.setAlignment(Qt.AlignCenter)
+        self.textbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        # This button sends the paths
+        self.tb_button = QPushButton("Enter")
+        self.tb_button.setStyleSheet("QPushButton { font-size: 30pt; }")
+        self.tb_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.tb_button.pressed.connect(functools.partial(self.publish_tb_message, self.publishers.command))
+        
+        # This timer will control the flickering of the ask for help label
+        self.help_timer = QTimer()
+        self.help_timer.timeout.connect(self.help_timer_callback)
+
+        # This label will represent the robot asking for help
+        self.help_lock = threading.Lock()
+        self.help_label = QLabel("All clear")
+        self.help_label.setAlignment(Qt.AlignCenter)
+        self.help_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.help_label.setStyleSheet("background-color: %s; font-size: 30pt;" % self.status_colour)
+        self.status_on_count = 1
+
+        # We add all our widgets unto a layout
+        self.hbox_layout = QGridLayout(self)
+        self.hbox_layout.addWidget(self.gohome_button)
+        self.hbox_layout.addWidget(self.status_label)
+        self.hbox_layout.addWidget(self.color_box)
+        self.hbox_layout.addWidget(self.textbox, 3, 0)
+        self.hbox_layout.addWidget(self.tb_button, 3, 1)
+        self.hbox_layout.addWidget(self.pause_button)
+        self.hbox_layout.addWidget(self.help_label)
+        self.next_wp = [0, 0]
+        self.colors = ["blue", "purple", "red", "pink", "yellow"]
+        self.colind = 0
+        self.paused = False
+
+        # We also set up our subscribers to receive status and help messages
+        self.subscribers = py_trees_ros.utilities.Subscribers(
+            [
+                ("status", "/status", std_msgs.String, self.status_display_callback),
+                ("helpme", "/helpme", std_msgs.String, self.help_callback)
+            ]
+        )
+
+        #self.status_timer.start(60000)  # ms
+        self.help_flashing = False
+        self.help_timer.start(1000)
+
+    # For the simple buttons we simply send an empty message
+    def publish_button_message(self, publisher):
+        publisher.publish()
+        # Based on the button we change colors and text
+        if publisher == self.publishers.gohome:
+            self.gohome_button.setStyleSheet("QPushButton { font-size: 30pt; background-color: green}")
+        else:
+            if self.paused:
+                self.pause_button.setStyleSheet("QPushButton { font-size: 30pt; background-color: grey}")
+                self.status_label.setText("Resume")
+                self.paused = False
+            else:
+                self.pause_button.setStyleSheet("QPushButton { font-size: 30pt; background-color: red}")
+                self.status_label.setText("Paused")
+                self.paused = True
+
+    # The text box message checks first that the message is numeric and the sends
+    def publish_tb_message(self, publisher):
+        text = self.textbox.text()
+        if (text.isnumeric()):
+            publisher.publish(std_msgs.String(text))
+        # reset the textbox 
+        self.textbox.setText("")
+
+    # When we receive the status we trigger this function
+    def status_display_callback(self, msg):
+        with self.status_lock:
+            # If there is no data turn the box grey
+            if not msg.data:
+                self.status_colour = "grey"
+                self.status_flashing = False
+                self.status_label.text = "Oh my"
+            else:
+                # Get the point we're going to
+                tuple_str = msg.data.split(" ")[2]
+                waypoint = tuple_str[1:len(tuple_str)-1].split(",")
+                if waypoint != self.next_wp:
+                    # if we receive a new way point switch the color in the box
+                    self.next_wp = waypoint
+                    self.color_box.setStyleSheet("background-color: %s; font-size: 30pt;" % self.colors[self.colind])
+                    self.colind += 1
+                    if self.colind == 5:
+                        self.colind = 0
+                if ("(0,0)" not in msg.data):
+                    # if we're not going home reset the button
+                    self.gohome_button.setStyleSheet("QPushButton { font-size: 30pt; background-color: grey}")
+                self.status_label.setText(msg.data)
+                #self.publishers.state.publish("3")
+                self.status_colour = "red"
+                #self.status_label.setStyleSheet("background-color: %s; font-size: 30pt;" % self.status_colour)
+    
+    def help_callback(self, msg): 
+        with self.help_lock:
+            # If we receive a message needing help
+            if msg.data == "HELPME":
+                # Start flashing the led and print message
+                self.help_flashing = True
+                self.help_label.setText("HELP ME!")
+            else:
+                # Stop flashing and say thanks
+                self.help_flashing = False
+                self.help_label.setText("Thanks!")
+    
+
+    @Slot()
+    def help_timer_callback(self):
+        # Timer for flashing the display
+        with self.status_lock:
+            if self.help_flashing:
+                if self.status_on_count > 0:
+                    self.status_on_count = 0
+                    self.help_label.setStyleSheet("background-color: none; font-size: 30pt;")
+                else:
+                    self.status_on_count += 1
+                    self.help_label.setStyleSheet("background-color: red; font-size: 30pt;")
+            else:  # solid
+                self.status_on_count = 1
+                self.help_label.setStyleSheet("background-color: %s; font-size: 30pt;" % self.status_colour)
+
+
+##############################################################################
+# Main
+##############################################################################
+
+if __name__ == '__main__':
+    rospy.init_node('dashboard')
+    app = QApplication(sys.argv)
+    window = QMainWindow()
+    dashboard = Dashboard()
+    window.setCentralWidget(dashboard)
+    window.show()
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    sys.exit(app.exec_())
