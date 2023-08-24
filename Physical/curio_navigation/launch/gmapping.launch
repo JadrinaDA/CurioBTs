@@ -5,7 +5,6 @@
   <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen">
     
     <remap from="scan" to="sensors/laser" />
-    <remap from="odom" to="odom/filtered"/>
      <!-- Fine tuning -->
     <param name="linearUpdate" value="0.8" />
     <param name="angularUpdate" value="0.8" />

@@ -140,6 +140,7 @@ class MoveBaseSeq():
         
         if status == 4:
             rospy.loginfo("Goal pose "+str(self.goal_cnt)+" was aborted by the Action Server")
+            self.state_pub.publish(String(str(status)))
             #rospy.signal_shutdown("Goal pose "+str(self.goal_cnt)+" aborted, shutting down!")
             #return
 
@@ -160,8 +161,6 @@ class MoveBaseSeq():
             data (:obj:`msg`): message containing the index of chosen path
         
         """
-        # Get the current path
-        self.pose_seq = self.paths[self.curr_path]
         # If we had gone home and now are going to another path reset the goal count
         if self.curr_path == 0 and int(data.data) != 0:
             self.goal_cnt = 0
@@ -177,6 +176,8 @@ class MoveBaseSeq():
             self.client.cancel_goal()
             self.curr_path = 1
         else:
+            # Get the current path
+            self.pose_seq = self.paths[self.curr_path]
             # If you are sent home reset goal count
             if self.curr_path == 0:
                 self.goal_cnt = 0
